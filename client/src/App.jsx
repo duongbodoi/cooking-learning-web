@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import CreateRecipe from './pages/CreateRecipe';
 import RecipeDetail from './pages/RecipeDetail';
+import CookingMode from './pages/CookingMode';
 import YourKitchen from './pages/YourKitchen';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 
@@ -32,6 +33,14 @@ function App() {
           } 
         />
         <Route path="/recipe/:id" element={<RecipeDetail />} />
+        <Route 
+          path="/recipe/:id/cooking-mode" 
+          element={
+            <ProtectedRoute>
+              <CookingMode />
+            </ProtectedRoute>
+          } 
+        />
       </Routes>
     </BrowserRouter>
   );

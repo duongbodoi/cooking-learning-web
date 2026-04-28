@@ -7,7 +7,7 @@ import { Clock, ChefHat, Star, CheckCircle2, Circle, Edit3, Heart, ChevronDown, 
 
 const RecipeDetail = () => {
   const { id } = useParams();
-  const { user, toggleSaveRecipe } = useContext(AuthContext);
+  const { user, toggleSaveRecipe, addCookedRecipe } = useContext(AuthContext);
   const navigate = useNavigate();
   
   const [recipe, setRecipe] = useState(null);
@@ -175,6 +175,20 @@ const RecipeDetail = () => {
                     <Heart size={18} className="text-red-500 fill-red-500" />
                     {recipe.favorites}
                   </div>
+                  <button
+                    onClick={() => {
+                      if (!user) {
+                        alert('Please login to use cooking mode');
+                        navigate('/login');
+                        return;
+                      }
+                      addCookedRecipe(recipe.id);
+                      navigate(`/recipe/${recipe.id}/cooking-mode`);
+                    }}
+                    className="flex items-center gap-1.5 font-bold text-white bg-primary px-4 py-2 rounded-xl hover:bg-orange-600 transition-colors shadow-sm hover:shadow"
+                  >
+                    Cooking Mode
+                  </button>
                 </div>
               </div>
 

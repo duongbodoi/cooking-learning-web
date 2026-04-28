@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 
 const YourKitchen = () => {
   const { user, toggleSaveRecipe } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState('saved'); // 'saved' or 'posted'
+  const [activeTab, setActiveTab] = useState('saved'); // 'saved', 'posted', 'cooked'
   const navigate = useNavigate();
 
   if (!user) {
@@ -30,7 +30,10 @@ const YourKitchen = () => {
   // Filter for 'Món đã đăng'
   const postedRecipesList = allRecipes.filter(r => r.authorId === user.id);
 
-  const displayRecipes = activeTab === 'saved' ? savedRecipesList : postedRecipesList;
+  // Filter for 'Món đã nấu'
+  const cookedRecipesList = allRecipes.filter(r => user.cookedRecipes?.map(id => id.toString())?.includes(r.id.toString()));
+
+  const displayRecipes = activeTab === 'saved' ? savedRecipesList : activeTab === 'posted' ? postedRecipesList : cookedRecipesList;
 
   const handleRecipeClick = (id) => {
     navigate(`/recipe/${id}`);
@@ -63,6 +66,12 @@ const YourKitchen = () => {
               >
                 Món đã đăng
               </button>
+              <button
+                onClick={() => setActiveTab('cooked')}
+                className={`w-full text-left px-4 py-3 rounded-xl font-medium transition-colors ${activeTab === 'cooked' ? 'bg-primary text-white shadow-md' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                Món đã nấu
+              </button>
             </div>
           </div>
         </div>
@@ -70,7 +79,7 @@ const YourKitchen = () => {
         {/* Main Content */}
         <div className="flex-1">
           <h2 className="text-2xl font-bold text-gray-800 mb-6 border-b pb-4">
-            {activeTab === 'saved' ? 'Món đã lưu (Saved Recipes)' : 'Món đã đăng (Posted Recipes)'}
+            {activeTab === 'saved' ? 'Món đã lưu (Saved Recipes)' : activeTab === 'posted' ? 'Món đã đăng (Posted Recipes)' : 'Món đã nấu (Cooked Dishes)'}
           </h2>
 
           {displayRecipes.length === 0 ? (

@@ -22,7 +22,8 @@ export const AuthProvider = ({ children }) => {
       const storedData = JSON.parse(localStorage.getItem(`userData_${foundUser.id}`));
       const userToSave = {
         ...foundUser,
-        savedRecipes: storedData?.savedRecipes || []
+        savedRecipes: storedData?.savedRecipes || [],
+        cookedRecipes: storedData?.cookedRecipes || []
       };
       delete userToSave.password;
       setUser(userToSave);
@@ -38,7 +39,8 @@ export const AuthProvider = ({ children }) => {
       email,
       username: email.split('@')[0],
       avatar: 'https://api.dicebear.com/7.x/notionists/svg?seed=' + email,
-      savedRecipes: []
+      savedRecipes: [],
+      cookedRecipes: []
     };
     setUser(mockUser);
     localStorage.setItem('mockUser', JSON.stringify(mockUser));
@@ -66,11 +68,32 @@ export const AuthProvider = ({ children }) => {
     const updatedUser = { ...user, savedRecipes: updatedSavedRecipes };
     setUser(updatedUser);
     localStorage.setItem('mockUser', JSON.stringify(updatedUser));
-    localStorage.setItem(`userData_${user.id}`, JSON.stringify({ savedRecipes: updatedSavedRecipes }));
+    
+    const storedData = JSON.parse(localStorage.getItem(`userData_${user.id}`)) || {};
+    storedData.savedRecipes = updatedSavedRecipes;
+    localStorage.setItem(`userData_${user.id}`, JSON.stringify(storedData));
+  };
+
+  const addCookedRecipe = (recipeId) => {
+    if (!user) return;
+    
+    let currentCooked = (user.cookedRecipes || []).map(id => id.toString());
+    const strId = recipeId.toString();
+    
+    if (!currentCooked.includes(strId)) {
+      const updatedCookedRecipes = [...currentCooked, strId];
+      const updatedUser = { ...user, cookedRecipes: updatedCookedRecipes };
+      setUser(updatedUser);
+      localStorage.setItem('mockUser', JSON.stringify(updatedUser));
+      
+      const storedData = JSON.parse(localStorage.getItem(`userData_${user.id}`)) || {};
+      storedData.cookedRecipes = updatedCookedRecipes;
+      localStorage.setItem(`userData_${user.id}`, JSON.stringify(storedData));
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, toggleSaveRecipe }}>
+    <AuthContext.Provider value={{ user, login, register, logout, toggleSaveRecipe, addCookedRecipe }}>
       {children}
     </AuthContext.Provider>
   );
