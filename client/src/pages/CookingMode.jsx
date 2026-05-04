@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { getRecipeById } from '../utils/recipeStorage';
 import { AuthContext } from '../context/AuthContext';
 import { 
   CheckCircle2, Circle, ArrowLeft, ArrowRight, Play, 
-  ChefHat, Award, Star, Utensils, Home
+  ChefHat, Award, Star, Utensils, Home, Timer, Mic
 } from 'lucide-react';
 
 const CookingMode = () => {
@@ -19,6 +19,18 @@ const CookingMode = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [userRating, setUserRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
+  const [isTimerOpen, setIsTimerOpen] = useState(false);
+  const [timerHours, setTimerHours] = useState(0);
+  const [timerMinutes, setTimerMinutes] = useState(0);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [timerDurationSeconds, setTimerDurationSeconds] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [isSettingNewTimer, setIsSettingNewTimer] = useState(true);
+  const [timerIconPos, setTimerIconPos] = useState({ x: 24, y: 240 });
+  const [draggingTarget, setDraggingTarget] = useState(null);
+  const dragStateRef = useRef({ offsetX: 0, offsetY: 0 });
+  const dragMovedRef = useRef(false);
 
   useEffect(() => {
     const data = getRecipeById(id);
@@ -28,6 +40,67 @@ const CookingMode = () => {
       setRecipe(data);
     }
   }, [id, navigate]);
+
+  useEffect(() => {
+    if (!isTimerRunning || remainingSeconds <= 0) return undefined;
+
+    const ticker = window.setInterval(() => {
+      setRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(ticker);
+          setIsTimerRunning(false);
+          alert('Timer is up!');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(ticker);
+  }, [isTimerRunning, remainingSeconds]);
+
+  useEffect(() => {
+    if (!draggingTarget) return undefined;
+
+    const getPoint = (event) => {
+      if (event.touches && event.touches.length > 0) {
+        return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+      }
+      return { x: event.clientX, y: event.clientY };
+    };
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    const onMove = (event) => {
+      const point = getPoint(event);
+      if (!point) return;
+      event.preventDefault();
+      dragMovedRef.current = true;
+
+      if (draggingTarget === 'icon') {
+        const size = 48;
+        const nextX = clamp(point.x - dragStateRef.current.offsetX, 8, window.innerWidth - size - 8);
+        const nextY = clamp(point.y - dragStateRef.current.offsetY, 8, window.innerHeight - size - 8);
+        setTimerIconPos({ x: nextX, y: nextY });
+      }
+    };
+
+    const onEnd = () => {
+      setDraggingTarget(null);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+  }, [draggingTarget]);
 
   if (!recipe) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -64,9 +137,155 @@ const CookingMode = () => {
     }
   };
 
+  const currentStepData = recipe?.steps?.[currentStep];
+  const currentStepTitle =
+    typeof currentStepData === 'object' && currentStepData?.title
+      ? currentStepData.title
+      : `Step ${currentStep + 1}`;
+  const currentStepDescription =
+    typeof currentStepData === 'string'
+      ? currentStepData
+      : currentStepData?.description || '';
+  const currentStepImage =
+    typeof currentStepData === 'object' && currentStepData?.imagePreview
+      ? currentStepData.imagePreview
+      : recipe?.image;
+
+  const progressPercent = recipe?.steps?.length
+    ? ((currentStep + 1) / recipe.steps.length) * 100
+    : 0;
+
+  const formatTwoDigits = (value) => value.toString().padStart(2, '0');
+
+  const remainingHours = Math.floor(remainingSeconds / 3600);
+  const remainingMinutes = Math.floor((remainingSeconds % 3600) / 60);
+  const remainingDisplaySeconds = remainingSeconds % 60;
+
+  const onWheelHour = (event) => {
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    setTimerHours((prev) => Math.min(3, Math.max(0, prev + direction)));
+  };
+
+  const onWheelMinute = (event) => {
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    setTimerMinutes((prev) => {
+      const next = prev + direction;
+      if (next > 59) return 0;
+      if (next < 0) return 59;
+      return next;
+    });
+  };
+
+  const onWheelSecond = (event) => {
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    setTimerSeconds((prev) => {
+      const next = prev + direction;
+      if (next > 60) return 0;
+      if (next < 0) return 60;
+      return next;
+    });
+  };
+
+  const openTimerDialog = () => {
+    if (remainingSeconds > 0) {
+      setTimerHours(Math.floor(remainingSeconds / 3600));
+      setTimerMinutes(Math.floor((remainingSeconds % 3600) / 60));
+      setTimerSeconds(remainingSeconds % 60);
+      setIsSettingNewTimer(false);
+    } else {
+      setIsSettingNewTimer(true);
+    }
+    setIsTimerOpen(true);
+  };
+
+  const closeTimerDialog = () => setIsTimerOpen(false);
+
+  const startTimer = () => {
+    const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
+    if (totalSeconds <= 0) return;
+    setRemainingSeconds(totalSeconds);
+    setTimerDurationSeconds(totalSeconds);
+    setIsTimerRunning(true);
+    setIsSettingNewTimer(false);
+  };
+
+  const togglePauseTimer = () => {
+    if (remainingSeconds <= 0) return;
+    setIsTimerRunning((prev) => !prev);
+  };
+
+  const resetTimer = () => {
+    setIsTimerRunning(false);
+    setRemainingSeconds(0);
+    setTimerDurationSeconds(0);
+    setTimerHours(0);
+    setTimerMinutes(0);
+    setTimerSeconds(0);
+    setIsSettingNewTimer(true);
+  };
+
+  const startNewTimerSetup = () => {
+    setIsTimerRunning(false);
+    setRemainingSeconds(0);
+    setTimerDurationSeconds(0);
+    setTimerHours(0);
+    setTimerMinutes(0);
+    setTimerSeconds(0);
+    setIsSettingNewTimer(true);
+  };
+
+  const beginDrag = (target, event) => {
+    const point = event.touches && event.touches.length > 0 ? event.touches[0] : event;
+    if (!point) return;
+    const currentPos = timerIconPos;
+    dragStateRef.current = {
+      offsetX: point.clientX - currentPos.x,
+      offsetY: point.clientY - currentPos.y,
+    };
+    dragMovedRef.current = false;
+    setDraggingTarget(target);
+  };
+
+  const handleTimerIconClick = () => {
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false;
+      return;
+    }
+    if (isTimerOpen) {
+      closeTimerDialog();
+    } else {
+      openTimerDialog();
+    }
+  };
+
+  const TIMER_ICON_SIZE = 48;
+  const TIMER_PANEL_WIDTH = Math.min(window.innerWidth * 0.92, 340);
+  const TIMER_PANEL_HEIGHT = 390;
+  const TIMER_PANEL_GAP = 8;
+  const timerPanelLeft = Math.max(
+    8,
+    Math.min(
+      timerIconPos.x + TIMER_ICON_SIZE / 2 - TIMER_PANEL_WIDTH / 2,
+      window.innerWidth - TIMER_PANEL_WIDTH - 8
+    )
+  );
+  const timerPanelTop = Math.max(
+    8,
+    Math.min(
+      timerIconPos.y + TIMER_ICON_SIZE + TIMER_PANEL_GAP,
+      window.innerHeight - TIMER_PANEL_HEIGHT - 8
+    )
+  );
+  const timerProgressPercent = timerDurationSeconds > 0
+    ? Math.max(0, Math.min(100, (remainingSeconds / timerDurationSeconds) * 100))
+    : 0;
+
   return (
     <div className="min-h-screen bg-secondary/5 font-sans flex flex-col">
-      <Header />
+      {phase !== 2 && <Header />}
 
       {/* PHASE 1: PREPARATION */}
       {phase === 1 && (
@@ -149,81 +368,246 @@ const CookingMode = () => {
 
       {/* PHASE 2: COOKING MODE */}
       {phase === 2 && (
-        <div className="flex-1 relative flex flex-col justify-between overflow-hidden" style={{
-          backgroundImage: 'linear-gradient(rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.95)), url(https://images.unsplash.com/photo-1556910103-1c02745a872f?w=1600&fit=crop)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundAttachment: 'fixed'
-        }}>
-          
-          {/* Header */}
-          <div className="container mx-auto px-4 py-4 max-w-6xl flex items-center justify-between text-white relative z-10 animate-fade-in flex-shrink-0">
-            <button 
-              onClick={prevStep}
-              className="flex items-center gap-2 hover:text-primary transition-colors font-semibold group bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl backdrop-blur-sm border border-white/10 text-sm md:text-base"
-            >
-              <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" /> 
-              <span className="hidden sm:inline">{currentStep === 0 ? 'Back to Prep' : 'Previous'}</span>
-            </button>
-            <div className="bg-white/10 backdrop-blur-md px-5 py-2 rounded-full font-bold text-base md:text-lg tracking-widest border border-white/20 shadow-lg">
-              STEP <span className="text-primary">{currentStep + 1}</span> / {recipe.steps.length}
-            </div>
-            <div className="w-[120px] hidden sm:block"></div> {/* Spacer for centering */}
-          </div>
+        <div className="flex-1 bg-[#111317] text-white px-4 pb-6 pt-4 sm:pt-6 animate-fade-in">
+          <div className="mx-auto w-full max-w-3xl">
+            {/* Top bar */}
+            <div className="mb-5 flex items-center justify-between">
+              <button
+                onClick={prevStep}
+                className="h-11 w-11 rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.28)] transition hover:bg-white/10"
+                aria-label={currentStep === 0 ? 'Back to prep' : 'Previous step'}
+              >
+                <ArrowLeft size={20} />
+              </button>
 
-          {/* Image Centered with constrained height */}
-          <div className="flex-1 min-h-0 flex items-center justify-center container mx-auto px-4 max-w-5xl relative z-10 py-2 animate-fade-in">
-            <div className="w-full max-w-3xl h-full max-h-[35vh] sm:max-h-[45vh] rounded-2xl overflow-hidden shadow-2xl border border-white/15 relative bg-black/50 backdrop-blur-sm group flex items-center justify-center">
-               <img 
-                 src={(typeof recipe.steps[currentStep] === 'object' && recipe.steps[currentStep].imagePreview) ? recipe.steps[currentStep].imagePreview : recipe.image} 
-                 alt={`Step ${currentStep + 1}`} 
-                 className="w-full h-full object-contain sm:object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-500"
-               />
-               <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
-            </div>
-          </div>
+              <div className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold tracking-wide text-white/90 backdrop-blur-md">
+                Step {currentStep + 1} / {recipe.steps.length}
+              </div>
 
-          {/* Description & Next button bottom aligned (compact) */}
-          <div className="w-full relative z-10 bg-gradient-to-t from-black via-black/90 to-transparent pt-12 pb-6 px-4 shadow-[0_-20px_40px_rgba(0,0,0,0.5)] flex-shrink-0">
-            <div className="container mx-auto max-w-4xl flex flex-col items-center">
-              
-              <h3 className="text-xl md:text-2xl lg:text-3xl font-bold text-white mb-3 text-center drop-shadow-lg tracking-wide">
-                {typeof recipe.steps[currentStep] === 'object' && recipe.steps[currentStep].title 
-                  ? recipe.steps[currentStep].title 
-                  : `Step ${currentStep + 1}`}
-              </h3>
-              
-              <p className="text-gray-300 text-base md:text-lg lg:text-xl leading-relaxed mb-6 max-w-3xl text-center font-medium drop-shadow-md line-clamp-3">
-                {typeof recipe.steps[currentStep] === 'string' 
-                  ? recipe.steps[currentStep] 
-                  : recipe.steps[currentStep].description}
+              <div className="h-11 w-11"></div>
+            </div>
+
+            {/* Main image */}
+            <div className="relative mb-[-36px] overflow-hidden rounded-[18px] shadow-[0_16px_40px_rgba(0,0,0,0.45)] border border-white/10">
+              <div className="aspect-video w-full bg-black/50">
+                <img
+                  src={currentStepImage}
+                  alt={currentStepTitle}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 via-black/25 to-transparent"></div>
+            </div>
+
+            {/* Floating glass content card */}
+            <div className="relative z-10 rounded-[20px] border border-white/15 bg-white/10 p-5 sm:p-6 backdrop-blur-xl shadow-[0_16px_38px_rgba(0,0,0,0.35)]">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#ffb170]">Step {currentStep + 1}</p>
+              <h3 className="text-xl sm:text-2xl font-semibold leading-snug text-white">{currentStepTitle}</h3>
+              <p className="mt-3 text-base sm:text-lg leading-relaxed text-white/85">
+                {currentStepDescription}
               </p>
-
-              {/* Progress bar */}
-              <div className="w-full max-w-lg flex gap-1 mb-6">
-                {recipe.steps.map((_, idx) => (
-                  <div 
-                    key={idx} 
-                    className={`h-1.5 rounded-full flex-1 transition-all duration-700 ease-in-out ${idx <= currentStep ? 'bg-primary shadow-[0_0_8px_rgba(2ea,88,12,0.6)]' : 'bg-white/20'}`}
-                  />
-                ))}
-              </div>
-
-              <div className="flex justify-center">
-                <button 
-                  onClick={nextStep}
-                  className="flex items-center gap-2 bg-gradient-to-r from-primary to-orange-500 text-white px-8 py-3 rounded-full font-bold text-base md:text-xl shadow-[0_8px_20px_rgba(2ea,88,12,0.4)] hover:shadow-[0_12px_30px_rgba(2ea,88,12,0.5)] hover:-translate-y-1 transition-all active:scale-95 group"
-                >
-                  {currentStep < recipe.steps.length - 1 ? (
-                    <>Next Step <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" /></>
-                  ) : (
-                    <>Finish Cooking <CheckCircle2 size={22} className="group-hover:scale-110 transition-transform" /></>
-                  )}
-                </button>
-              </div>
             </div>
+
+            {/* Progress bar */}
+            <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-white/15">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#ff7a00] to-[#ffb066] transition-all duration-500 ease-out"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+
+            {/* Bottom controls */}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                onClick={prevStep}
+                className="h-12 rounded-2xl border border-white/20 bg-white/5 text-sm sm:text-base font-semibold text-white/90 transition hover:bg-white/10"
+              >
+                Previous
+              </button>
+              <button
+                onClick={nextStep}
+                className="h-12 rounded-2xl bg-gradient-to-r from-[#ff7a00] to-[#ffa24d] text-sm sm:text-base font-semibold text-white shadow-[0_10px_30px_rgba(255,122,0,0.38)] transition hover:brightness-110 active:scale-[0.99] flex items-center justify-center gap-2"
+              >
+                {currentStep < recipe.steps.length - 1 ? (
+                  <>Next Step <ArrowRight size={18} /></>
+                ) : (
+                  <>Finish Cooking <CheckCircle2 size={18} /></>
+                )}
+              </button>
+            </div>
+
+            {(remainingSeconds > 0 || isTimerRunning) && (
+              <div className="mt-4 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-md">
+                <div className="flex items-center justify-between gap-3 text-sm sm:text-base">
+                  <p className="font-medium text-white/90">
+                    Timer: {formatTwoDigits(remainingHours)}:{formatTwoDigits(remainingMinutes)}:{formatTwoDigits(remainingDisplaySeconds)}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={togglePauseTimer}
+                      className="rounded-xl bg-white/10 px-3 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-white/20"
+                    >
+                      {isTimerRunning ? 'Pause' : 'Resume'}
+                    </button>
+                    <button
+                      onClick={resetTimer}
+                      className="rounded-xl bg-[#ff7a00]/20 px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#ffb170] hover:bg-[#ff7a00]/30"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Optional floating controls */}
+          <div className="fixed bottom-6 right-5 z-20 flex flex-col gap-3 sm:right-8">
+            <button
+              className="h-12 w-12 rounded-full border border-white/20 bg-[#1c2026]/80 text-white shadow-[0_10px_24px_rgba(0,0,0,0.4)] backdrop-blur-md transition hover:bg-[#242a32]"
+              aria-label="Voice instruction"
+            >
+              <Mic size={18} className="mx-auto" />
+            </button>
           </div>
         </div>
+      )}
+
+      {/* Draggable timer tool */}
+      {phase === 2 && (
+        <>
+          {!isTimerOpen && remainingSeconds > 0 && (
+            <div
+              className="fixed z-40 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-[#111317]/90 text-[10px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.35)]"
+              style={{
+                left: `${timerIconPos.x + 4}px`,
+                top: `${timerIconPos.y - 46}px`,
+                backgroundImage: `conic-gradient(#ff7a00 ${timerProgressPercent}%, rgba(255,255,255,0.15) ${timerProgressPercent}% 100%)`,
+              }}
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#111317]">
+                {formatTwoDigits(remainingMinutes)}:{formatTwoDigits(remainingDisplaySeconds)}
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onMouseDown={(event) => beginDrag('icon', event)}
+            onTouchStart={(event) => beginDrag('icon', event)}
+            onClick={handleTimerIconClick}
+            className="fixed z-40 h-12 w-12 rounded-full border border-white/25 bg-[#1c2026]/90 text-white shadow-[0_10px_24px_rgba(0,0,0,0.4)] backdrop-blur-md transition hover:bg-[#242a32] cursor-grab active:cursor-grabbing"
+            style={{ left: `${timerIconPos.x}px`, top: `${timerIconPos.y}px` }}
+            aria-label="Open timer tool"
+          >
+            <Timer size={18} className="mx-auto" />
+          </button>
+
+          {isTimerOpen && (
+            <div
+              className="fixed z-40 w-[min(92vw,340px)] rounded-[24px] border border-white/15 bg-[#171b21]/92 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.45)]"
+              style={{ left: `${timerPanelLeft}px`, top: `${timerPanelTop}px` }}
+            >
+              <div className="mb-4 flex items-center justify-between select-none">
+                <h4 className="text-base font-semibold text-white">Set cooking timer</h4>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={closeTimerDialog}
+                    className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-xs text-white/80 hover:bg-white/10"
+                  >
+                    Hide
+                  </button>
+                </div>
+              </div>
+
+              <div className="mx-auto flex h-52 w-52 items-center justify-center rounded-full border border-white/15 bg-gradient-to-b from-white/10 to-white/5 shadow-[inset_0_0_40px_rgba(255,255,255,0.05)]">
+                <div className="w-[86%] rounded-2xl border border-white/10 bg-[#0f1318]/70 px-4 py-5">
+                  {isSettingNewTimer ? (
+                    <>
+                      <p className="mb-3 text-center text-xs uppercase tracking-[0.18em] text-white/55">Scroll to adjust</p>
+                      <div className="flex items-center justify-center gap-2 text-white">
+                        <div
+                          onWheel={onWheelHour}
+                          className="w-16 rounded-xl border border-white/15 bg-white/10 py-2 text-center text-3xl font-semibold select-none"
+                          title="Hours (0-3)"
+                        >
+                          {timerHours}
+                        </div>
+                        <span className="text-2xl font-semibold text-white/80">:</span>
+                        <div
+                          onWheel={onWheelMinute}
+                          className="w-16 rounded-xl border border-white/15 bg-white/10 py-2 text-center text-3xl font-semibold select-none"
+                          title="Minutes (00-59)"
+                        >
+                          {formatTwoDigits(timerMinutes)}
+                        </div>
+                        <span className="text-2xl font-semibold text-white/80">:</span>
+                        <div
+                          onWheel={onWheelSecond}
+                          className="w-16 rounded-xl border border-white/15 bg-white/10 py-2 text-center text-3xl font-semibold select-none"
+                          title="Seconds (00-60)"
+                        >
+                          {formatTwoDigits(timerSeconds)}
+                        </div>
+                      </div>
+                      <div className="mt-3 flex justify-center gap-5 text-[11px] uppercase tracking-[0.18em] text-white/55">
+                        <span>Hour</span>
+                        <span>Minute</span>
+                        <span>Second</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mb-3 text-center text-xs uppercase tracking-[0.18em] text-white/55">Countdown</p>
+                      <div className="rounded-xl border border-white/15 bg-white/10 py-4 text-center">
+                        <p className="text-4xl font-semibold text-white">
+                          {formatTwoDigits(remainingHours)}:{formatTwoDigits(remainingMinutes)}:{formatTwoDigits(remainingDisplaySeconds)}
+                        </p>
+                      </div>
+                      <p className="mt-3 text-center text-[11px] uppercase tracking-[0.18em] text-white/55">
+                        {isTimerRunning ? 'Running' : 'Paused'}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {isSettingNewTimer ? (
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <button
+                    onClick={closeTimerDialog}
+                    className="h-10 rounded-2xl border border-white/20 bg-white/5 text-sm font-semibold text-white/90 hover:bg-white/10"
+                  >
+                    Minimize
+                  </button>
+                  <button
+                    onClick={startTimer}
+                    disabled={timerHours === 0 && timerMinutes === 0 && timerSeconds === 0}
+                    className="h-10 rounded-2xl bg-gradient-to-r from-[#ff7a00] to-[#ffab57] text-sm font-semibold text-white shadow-[0_10px_30px_rgba(255,122,0,0.32)] hover:brightness-110 disabled:opacity-40"
+                  >
+                    Start Timer
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <button
+                    onClick={togglePauseTimer}
+                    disabled={remainingSeconds <= 0}
+                    className="h-10 rounded-2xl border border-white/20 bg-white/5 text-sm font-semibold text-white/90 hover:bg-white/10 disabled:opacity-40"
+                  >
+                    {isTimerRunning ? 'Pause' : 'Resume'}
+                  </button>
+                  <button
+                    onClick={startNewTimerSetup}
+                    className="h-10 rounded-2xl bg-gradient-to-r from-[#ff7a00] to-[#ffab57] text-sm font-semibold text-white shadow-[0_10px_30px_rgba(255,122,0,0.32)] hover:brightness-110"
+                  >
+                    New Timer
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {/* PHASE 3: COMPLETED */}
